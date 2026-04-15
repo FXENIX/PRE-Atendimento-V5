@@ -1,94 +1,45 @@
-import { supabase } from "../lib/supabase";
+import { db, evolutionServersTable, evolutionInstancesTable } from "@workspace/db";
+import { eq, asc } from "drizzle-orm";
 import { logger } from "../lib/logger";
 
-// ── Types ────────────────────────────────────────────────────
+// ── Re-export types from schema ───────────────────────────────
 
-export interface EvolutionServer {
-  id: string;
-  name: string;
-  apiUrl: string;
-  createdAt: string;
-}
+export type { EvolutionServer, EvolutionInstance } from "@workspace/db";
 
-export interface EvolutionInstance {
-  id: string;
-  serverId: string;
-  instanceName: string;
-  instanceToken: string;
-  instanceJid: string;
-  status: string;
-  createdAt: string;
-}
-
-// ── Row mappers ───────────────────────────────────────────────
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function rowToServer(row: any): EvolutionServer {
-  return {
-    id: row.id as string,
-    name: row.name as string,
-    apiUrl: row.api_url as string,
-    createdAt: row.created_at as string,
-  };
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function rowToInstance(row: any): EvolutionInstance {
-  return {
-    id: row.id as string,
-    serverId: row.server_id as string,
-    instanceName: row.instance_name as string,
-    instanceToken: row.instance_token as string,
-    instanceJid: row.instance_jid as string,
-    status: row.status as string,
-    createdAt: row.created_at as string,
-  };
-}
-
-// ── Server functions ─────────────────────────────────────────
+// ── Server functions ──────────────────────────────────────────
 
 export async function createEvolutionServer(
   name: string,
   apiUrl: string,
   apiKey: string,
-): Promise<EvolutionServer> {
-  const { data, error } = await supabase
-    .from("evolution_servers")
-    .insert({ name, api_url: apiUrl, api_key: apiKey })
-    .select("id, name, api_url, created_at")
-    .single();
-
-  if (error) throw new Error("Erro ao criar servidor: " + error.message);
-  return rowToServer(data);
+) {
+  const [row] = await db
+    .insert(evolutionServersTable)
+    .values({ name, apiUrl, apiKey })
+    .returning();
+  if (!row) throw new Error("Erro ao criar servidor: nenhuma linha retornada.");
+  return row;
 }
 
-export async function listEvolutionServers(): Promise<EvolutionServer[]> {
-  const { data, error } = await supabase
-    .from("evolution_servers")
-    .select("id, name, api_url, created_at")
-    .order("created_at", { ascending: true });
-
-  if (error) { logger.error({ error }, "listEvolutionServers error"); return []; }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (data ?? []).map((r: any) => rowToServer(r));
+export async function listEvolutionServers() {
+  return db
+    .select({
+      id: evolutionServersTable.id,
+      name: evolutionServersTable.name,
+      apiUrl: evolutionServersTable.apiUrl,
+      createdAt: evolutionServersTable.createdAt,
+    })
+    .from(evolutionServersTable)
+    .orderBy(asc(evolutionServersTable.createdAt));
 }
 
-export async function getEvolutionServerWithKey(
-  serverId: string,
-): Promise<{ id: string; name: string; apiUrl: string; apiKey: string } | undefined> {
-  const { data, error } = await supabase
-    .from("evolution_servers")
-    .select("id, name, api_url, api_key")
-    .eq("id", serverId)
-    .maybeSingle();
-
-  if (error || !data) return undefined;
-  return {
-    id: data.id as string,
-    name: data.name as string,
-    apiUrl: data.api_url as string,
-    apiKey: data.api_key as string,
-  };
+export async function getEvolutionServerWithKey(serverId: string) {
+  const [row] = await db
+    .select()
+    .from(evolutionServersTable)
+    .where(eq(evolutionServersTable.id, serverId))
+    .limit(1);
+  return row ?? undefined;
 }
 
 // ── Instance functions ────────────────────────────────────────
@@ -99,69 +50,54 @@ export async function createEvolutionInstance(
   instanceToken: string,
   instanceJid: string,
   status: string,
-): Promise<EvolutionInstance> {
-  const { data, error } = await supabase
-    .from("evolution_instances")
-    .insert({
-      server_id: serverId,
-      instance_name: instanceName,
-      instance_token: instanceToken,
-      instance_jid: instanceJid,
-      status,
-    })
-    .select("id, server_id, instance_name, instance_token, instance_jid, status, created_at")
-    .single();
-
-  if (error) throw new Error("Erro ao salvar instância: " + error.message);
-  return rowToInstance(data);
+) {
+  const [row] = await db
+    .insert(evolutionInstancesTable)
+    .values({ serverId, instanceName, instanceToken, instanceJid, status })
+    .returning();
+  if (!row) throw new Error("Erro ao salvar instância: nenhuma linha retornada.");
+  return row;
 }
 
-export async function listEvolutionInstances(serverId?: string): Promise<EvolutionInstance[]> {
-  let query = supabase
-    .from("evolution_instances")
-    .select("id, server_id, instance_name, instance_token, instance_jid, status, created_at")
-    .order("created_at", { ascending: true });
-
-  if (serverId) query = query.eq("server_id", serverId);
-
-  const { data, error } = await query;
-  if (error) { logger.error({ error }, "listEvolutionInstances error"); return []; }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (data ?? []).map((r: any) => rowToInstance(r));
+export async function listEvolutionInstances(serverId?: string) {
+  if (serverId) {
+    return db
+      .select()
+      .from(evolutionInstancesTable)
+      .where(eq(evolutionInstancesTable.serverId, serverId))
+      .orderBy(asc(evolutionInstancesTable.createdAt));
+  }
+  return db
+    .select()
+    .from(evolutionInstancesTable)
+    .orderBy(asc(evolutionInstancesTable.createdAt));
 }
 
 export async function updateInstanceStatus(
   instanceId: string,
   status: string,
   instanceJid?: string,
-): Promise<EvolutionInstance | null> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const updates: Record<string, any> = { status };
-  if (instanceJid !== undefined) updates["instance_jid"] = instanceJid;
+) {
+  const updates: Partial<typeof evolutionInstancesTable.$inferInsert> = { status };
+  if (instanceJid !== undefined) updates.instanceJid = instanceJid;
 
-  const { data, error } = await supabase
-    .from("evolution_instances")
-    .update(updates)
-    .eq("id", instanceId)
-    .select("id, server_id, instance_name, instance_token, instance_jid, status, created_at")
-    .maybeSingle();
+  const [row] = await db
+    .update(evolutionInstancesTable)
+    .set(updates)
+    .where(eq(evolutionInstancesTable.id, instanceId))
+    .returning();
 
-  if (error) { logger.error({ error }, "updateInstanceStatus error"); return null; }
-  if (!data) return null;
-  return rowToInstance(data);
+  if (!row) { logger.warn({ instanceId }, "updateInstanceStatus: not found"); return null; }
+  return row;
 }
 
-export async function getEvolutionInstanceByName(
-  serverId: string,
-  instanceName: string,
-): Promise<EvolutionInstance | undefined> {
-  const { data, error } = await supabase
-    .from("evolution_instances")
-    .select("id, server_id, instance_name, instance_token, instance_jid, status, created_at")
-    .eq("server_id", serverId)
-    .eq("instance_name", instanceName)
-    .maybeSingle();
+export async function getEvolutionInstanceByName(serverId: string, instanceName: string) {
+  const [row] = await db
+    .select()
+    .from(evolutionInstancesTable)
+    .where(eq(evolutionInstancesTable.serverId, serverId))
+    .limit(1);
 
-  if (error || !data) return undefined;
-  return rowToInstance(data);
+  if (!row || row.instanceName !== instanceName) return undefined;
+  return row;
 }

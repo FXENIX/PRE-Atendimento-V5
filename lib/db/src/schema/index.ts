@@ -35,6 +35,26 @@ export const auditLogTable = pgTable("audit_log", {
   index("audit_log_logged_at_idx").on(table.loggedAt),
 ]);
 
+export const evolutionServersTable = pgTable("evolution_servers", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  apiUrl: text("api_url").notNull(),
+  apiKey: text("api_key").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const evolutionInstancesTable = pgTable("evolution_instances", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  serverId: uuid("server_id").notNull().references(() => evolutionServersTable.id, { onDelete: "cascade" }),
+  instanceName: text("instance_name").notNull(),
+  instanceToken: text("instance_token").notNull().default(""),
+  instanceJid: text("instance_jid").notNull().default(""),
+  status: text("status").notNull().default("created"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("evolution_instances_server_id_idx").on(table.serverId),
+]);
+
 export const insertUserSchema = createInsertSchema(usersTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof usersTable.$inferSelect;
@@ -46,3 +66,6 @@ export type EvolutionConfig = typeof evolutionConfigsTable.$inferSelect;
 export const insertAuditLogSchema = createInsertSchema(auditLogTable).omit({ id: true, loggedAt: true });
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type AuditLog = typeof auditLogTable.$inferSelect;
+
+export type EvolutionServer = typeof evolutionServersTable.$inferSelect;
+export type EvolutionInstance = typeof evolutionInstancesTable.$inferSelect;
