@@ -25,6 +25,12 @@ const GENERIC_HTTP_STRINGS = new Set([
 ]);
 
 function extractEvoMessage(data: unknown, httpStatus: number, context?: "create" | "delete" | "status"): string {
+  function pickStr(v: unknown): string | null {
+    if (typeof v === "string") return v.trim() || null;
+    if (Array.isArray(v) && typeof v[0] === "string") return String(v[0]).trim() || null;
+    return null;
+  }
+
   if (typeof data === "string") {
     const trimmed = data.trim();
     if (trimmed && !GENERIC_HTTP_STRINGS.has(trimmed.toLowerCase())) {
@@ -33,22 +39,23 @@ function extractEvoMessage(data: unknown, httpStatus: number, context?: "create"
   }
   if (typeof data === "object" && data !== null) {
     const d = data as Record<string, unknown>;
+    const resp = d.response as Record<string, unknown> | undefined;
     const raw =
-      (d.message as string) ??
-      (d.error as string) ??
-      (d.msg as string) ??
-      ((d.response as Record<string, unknown>)?.message as string) ??
-      ((d.response as Record<string, unknown>)?.error as string) ??
+      pickStr(d.message) ??
+      pickStr(d.msg) ??
+      (d.error && !GENERIC_HTTP_STRINGS.has(String(d.error).toLowerCase()) ? pickStr(d.error) : null) ??
+      pickStr(resp?.message) ??
+      pickStr(resp?.error) ??
       null;
-    if (raw && !GENERIC_HTTP_STRINGS.has(String(raw).toLowerCase())) {
-      return String(raw).slice(0, 300);
+    if (raw && !GENERIC_HTTP_STRINGS.has(raw.toLowerCase())) {
+      return raw.slice(0, 300);
     }
   }
   if (httpStatus === 401) return "API Key inválida ou sem permissão. Verifique a chave configurada.";
   if (httpStatus === 403) return "Acesso negado pela Evolution API. Verifique a API Key.";
   if (httpStatus === 404) {
     if (context === "create") {
-      return "Endpoint não encontrado (404). Verifique se a URL da Evolution API está correta (ex: https://sua-api.com).";
+      return "Endpoint não encontrado (404). Verifique se a URL da Evolution API está correta — deve ser só a base (ex: https://sua-api.com), sem subpastas.";
     }
     if (context === "delete") {
       return "Instância não encontrada na Evolution API (já pode ter sido apagada).";

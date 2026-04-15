@@ -5,6 +5,20 @@ import { getConfig, getPublicConfig, saveConfig } from "../store/evolution-confi
 const router: IRouter = Router();
 router.use(requireAuth);
 
+function normalizeEvoUrl(raw: string): { normalized: string; stripped: string | null } {
+  const parsed = new URL(raw.trim());
+  const origin = parsed.origin;
+  const hadPath = parsed.pathname !== "/" && parsed.pathname !== "";
+  return {
+    normalized: origin,
+    stripped: hadPath ? parsed.pathname : null,
+  };
+}
+
+function buildUrl(base: string, path: string): string {
+  return base.replace(/\/+$/, "") + path;
+}
+
 router.get("/evolution-config", async (req, res) => {
   const userId = req.jwtUser!.id;
   const cfg = await getPublicConfig(userId);
@@ -21,20 +35,27 @@ router.post("/evolution-config", async (req, res) => {
     res.status(400).json({ message: "A URL da Evolution API é obrigatória." }); return;
   }
 
+  let parsed: ReturnType<typeof normalizeEvoUrl>;
+  try {
+    parsed = normalizeEvoUrl(url);
+  } catch {
+    res.status(400).json({ message: "URL inválida. Inclua o protocolo (https://)." }); return;
+  }
+
   const existing = await getConfig(userId);
   if (!apiKey?.trim() && !existing?.apiKey) {
     res.status(400).json({ message: "API Key é obrigatória na primeira configuração." }); return;
   }
 
-  try { new URL(url.trim()); } catch {
-    res.status(400).json({ message: "URL inválida. Inclua o protocolo (https://)." }); return;
-  }
-
-  // Keep existing instance name or auto-generate from userId
   const instanceName = existing?.instanceName || `inst-${userId.replace(/-/g, "").slice(0, 12)}`;
+  const saved = await saveConfig(userId, parsed.normalized, apiKey?.trim() ?? "", instanceName);
 
-  const saved = await saveConfig(userId, url.trim(), apiKey?.trim() ?? "", instanceName);
-  res.json({ config: saved });
+  res.json({
+    config: saved,
+    urlNormalized: parsed.stripped
+      ? `Caminho removido da URL: "${parsed.stripped}" — salvo como "${parsed.normalized}"`
+      : null,
+  });
 });
 
 router.put("/evolution-config", async (req, res) => {
@@ -42,10 +63,22 @@ router.put("/evolution-config", async (req, res) => {
   const body = req.body as { url?: string; apiKey?: string; instanceName?: string };
 
   const existing = await getConfig(userId);
-  const finalUrl = body.url?.trim() || existing?.url || "";
+
+  let finalUrl = body.url?.trim() || existing?.url || "";
+  let urlWarning: string | null = null;
+
+  if (body.url?.trim()) {
+    try {
+      const parsed = normalizeEvoUrl(body.url.trim());
+      if (parsed.stripped) urlWarning = `Caminho removido da URL: "${parsed.stripped}" — salvo como "${parsed.normalized}"`;
+      finalUrl = parsed.normalized;
+    } catch {
+      res.status(400).json({ message: "URL inválida. Inclua o protocolo (https://)." }); return;
+    }
+  }
+
   const finalKey = body.apiKey?.trim() || existing?.apiKey || "";
 
-  // Allow explicitly clearing instanceName by passing "" — otherwise keep existing
   const finalInstance = "instanceName" in body
     ? (body.instanceName?.trim() ?? "")
     : (existing?.instanceName ?? "");
@@ -55,11 +88,9 @@ router.put("/evolution-config", async (req, res) => {
   }
 
   const saved = await saveConfig(userId, finalUrl, finalKey, finalInstance);
-  res.json({ config: saved });
+  res.json({ config: saved, urlWarning });
 });
 
-// Tests connectivity using connectionState on the user's bound instance.
-// Never calls fetchInstances (which would expose all global instances).
 router.post("/evolution-config/test", async (req, res) => {
   const userId = req.jwtUser!.id;
   const cfg = await getConfig(userId);
@@ -69,16 +100,18 @@ router.post("/evolution-config/test", async (req, res) => {
   }
 
   try {
-    const response = await fetch(`${cfg.url}/instance/connectionState/${cfg.instanceName}`, {
-      method: "GET",
-      headers: { apikey: cfg.apiKey },
-      signal: AbortSignal.timeout(8000),
-    });
+    const response = await fetch(
+      buildUrl(cfg.url, `/instance/connectionState/${cfg.instanceName}`),
+      {
+        method: "GET",
+        headers: { apikey: cfg.apiKey },
+        signal: AbortSignal.timeout(8000),
+      },
+    );
 
     if (response.ok) {
       res.json({ ok: true, message: "Conexão estabelecida com sucesso." });
     } else if (response.status === 404) {
-      // API is reachable but instance not created yet — that's fine
       res.json({ ok: true, message: "Conexão com a Evolution API estabelecida. A instância ainda não foi criada." });
     } else {
       const body = await response.text().catch(() => "");

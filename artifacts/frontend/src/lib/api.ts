@@ -136,7 +136,7 @@ export async function saveEvolutionConfig(
   token: string,
   p: { url: string; apiKey: string },
 ) {
-  return request<{ config: EvolutionConfigPublic }>("/evolution-config", {
+  return request<{ config: EvolutionConfigPublic; urlNormalized?: string | null }>("/evolution-config", {
     method: "POST",
     body: JSON.stringify(p),
   }, token);
@@ -146,7 +146,7 @@ export async function updateEvolutionConfig(
   token: string,
   p: { instanceName?: string; url?: string; apiKey?: string },
 ) {
-  return request<{ config: EvolutionConfigPublic }>("/evolution-config", {
+  return request<{ config: EvolutionConfigPublic; urlWarning?: string | null }>("/evolution-config", {
     method: "PUT",
     body: JSON.stringify(p),
   }, token);

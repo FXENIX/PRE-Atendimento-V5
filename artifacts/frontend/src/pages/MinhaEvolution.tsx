@@ -296,12 +296,15 @@ export default function MinhaEvolution() {
     }
     setSaving(true);
     try {
-      const { config } = await saveEvolutionConfig(token, {
+      const result = await saveEvolutionConfig(token, {
         url: url.trim(), apiKey: apiKey.trim(),
       });
+      const { config } = result;
       setSavedConfig(config);
+      setUrl(config.url);
       setApiKey("");
-      setSaveMsg({ ok: true, text: "Configuração salva! Buscando status…" });
+      const notice = result.urlNormalized ? ` Atenção: ${result.urlNormalized}` : "";
+      setSaveMsg({ ok: true, text: `Configuração salva!${notice} Buscando status…` });
       setConfigOpen(false);
       stopPolling();
       setQrData(null);
@@ -575,6 +578,7 @@ export default function MinhaEvolution() {
                   placeholder="https://sua-evolution-api.com"
                   value={url} onChange={e => setUrl(e.target.value)} disabled={saving}
                 />
+                <span className="field-hint">Somente a URL base, sem subpastas. Ex: <code>https://api.exemplo.com</code></span>
               </div>
               <div className="field-group full-width">
                 <label htmlFor="evo-key">
