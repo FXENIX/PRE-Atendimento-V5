@@ -14,6 +14,10 @@ router.use(requireAuth);
 
 // ── Helpers ───────────────────────────────────────────────────
 
+function buildUrl(base: string, path: string): string {
+  return base.replace(/\/+$/, "") + path;
+}
+
 async function evoProxy(
   url: string,
   apiKey: string,
@@ -109,7 +113,7 @@ router.post("/evolution-servers/:serverId/instances", async (req, res) => {
   try {
     // 1. Create instance on the Evolution API
     const { ok, status, data } = await evoProxy(
-      `${server.apiUrl}/instance/create`,
+      buildUrl(server.apiUrl, "/instance/create"),
       server.apiKey,
       "POST",
       {
